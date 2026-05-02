@@ -19,7 +19,7 @@ async function supabase(path: string, options?: RequestInit) {
     ...options,
     headers: {
       'apikey': SUPABASE_KEY,
-      'Authorization': `Bearer ${SUPABASE_KEY`,
+      'Authorization': `Bearer ${SUPABASE_KEY}`,
       'Content-Type': 'application/json',
       'Prefer': 'return=representation',
       ...options?.headers,
@@ -56,11 +56,9 @@ export async function readArticles(): Promise<NewsArticle[]> {
 
 export async function getTodaysArticles(): Promise<NewsArticle[]> {
   try {
-    // Start of today in UTC (midnight)
     const startOfDay = new Date()
     startOfDay.setUTCHours(0, 0, 0, 0)
     const iso = startOfDay.toISOString()
-
     const res = await supabase(
       `articles?select=*&scraped_at=gte.${iso}&order=scraped_at.desc&limit=500`
     )
@@ -78,11 +76,9 @@ export async function getTodaysArticles(): Promise<NewsArticle[]> {
 
 export async function getWeeklyArticles(): Promise<NewsArticle[]> {
   try {
-    // 7 days ago from now in UTC
     const sevenDaysAgo = new Date()
     sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 7)
     const iso = sevenDaysAgo.toISOString()
-
     const res = await supabase(
       `articles?select=*&scraped_at=gte.${iso}&order=scraped_at.desc&limit=1000`
     )

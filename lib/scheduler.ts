@@ -18,8 +18,8 @@ export function startScheduler() {
   // ── Weekly Digest: Every Monday at 8am CST (Sunday midnight UTC) ──────────
   cron.schedule('0 0 * * 1', async () => {
     console.log('\n📧 Weekly digest triggered by cron\n')
-    const config = readConfig()
-    const articles = getWeeklyArticles()
+    const config = await readConfig()
+    const articles = await getWeeklyArticles()
     try {
       await sendWeeklyDigest(articles, config)
     } catch (err) {
@@ -38,7 +38,7 @@ export async function runDailyScrape(): Promise<{
   urgentCount: number
   errors: string[]
 }> {
-  const config = readConfig()
+  const config = await readConfig()
 
   try {
     // 1. Scrape
@@ -54,7 +54,7 @@ export async function runDailyScrape(): Promise<{
     const processedArticles = await processArticles(rawArticles)
 
     // 3. Store (deduplicating)
-    const { added, skipped } = appendArticles(processedArticles)
+    const { added, skipped } = await appendArticles(processedArticles)
     console.log(`\n💾 Stored: ${added} new articles (${skipped} duplicates skipped)`)
 
     // 4. Send urgent alerts

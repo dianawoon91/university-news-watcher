@@ -13,15 +13,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, message: 'No articles found', stats: { articlesFound: 0, articlesAdded: 0, articlesSkipped: 0, urgentCount: 0, sourcesChecked, errors } })
     }
 
-    // Save directly without Claude classification
-    const articles: NewsArticle[] = rawArticles.slice(0, 20).map((raw, i) => ({
+    const articles: NewsArticle[] = rawArticles.slice(0, 20).map((raw) => ({
       id: Buffer.from(raw.url).toString('base64').slice(0, 16),
       universityName: raw.universityName,
       universityShortName: raw.universityShortName,
       title: raw.title,
       url: raw.url,
       source: raw.source,
-      publishedAt: raw.publishedAt,
+      publishedAt: new Date().toISOString(),
       scrapedAt: new Date().toISOString(),
       summaryEn: raw.content || 'Click the title to read the full article.',
       summaryCn: '点击标题阅读全文。',
@@ -29,7 +28,7 @@ export async function POST(req: NextRequest) {
       urgency: 'NORMAL' as const,
     }))
 
-    const { added, skipped } = appendArticles(articles)
+    const { added, skipped } = await appendArticles(articles)
 
     return NextResponse.json({
       success: true,
@@ -37,6 +36,7 @@ export async function POST(req: NextRequest) {
       stats: { articlesFound: rawArticles.length, articlesAdded: added, articlesSkipped: skipped, urgentCount: 0, sourcesChecked, errors },
     })
   } catch (err) {
+    console.error('Scrape error:', err)
     return NextResponse.json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 })
   }
 }

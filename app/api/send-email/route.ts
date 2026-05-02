@@ -7,11 +7,11 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const { action } = body
 
-  const config = readConfig()
+  const config = await readConfig()
 
   if (action === 'send-weekly-digest') {
     try {
-      const articles = getWeeklyArticles()
+      const articles = await getWeeklyArticles()
       await sendWeeklyDigest(articles, config)
       return NextResponse.json({ success: true, message: 'Weekly digest sent' })
     } catch (err) {
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
 }
 
 export async function GET() {
-  const config = readConfig()
+  const config = await readConfig()
   // Never expose SMTP password to frontend
   const safeConfig = { ...config, smtpPass: config.smtpPass ? '••••••••' : '' }
   return NextResponse.json(safeConfig)

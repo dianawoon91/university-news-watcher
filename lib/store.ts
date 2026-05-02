@@ -1,77 +1,9 @@
-import fs from 'fs'
-import path from 'path'
 import { NewsArticle, AppConfig } from './types'
 
-const DATA_DIR = path.join(process.cwd(), 'data')
-const NEWS_STORE_PATH = path.join(DATA_DIR, 'news-store.json')
-const CONFIG_PATH = path.join(DATA_DIR, 'config.json')
+const SUPABASE_URL = process.env.SUPABASE_URL!
+const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY!
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true })
-  }
-}
-
-// ── News Store ──────────────────────────────────────────────────────────────
-
-export function readArticles(): NewsArticle[] {
-  ensureDataDir()
-  if (!fs.existsSync(NEWS_STORE_PATH)) return []
-  try {
-    const raw = fs.readFileSync(NEWS_STORE_PATH, 'utf-8')
-    return JSON.parse(raw) as NewsArticle[]
-  } catch {
-    return []
-  }
-}
-
-export function writeArticles(articles: NewsArticle[]): void {
-  ensureDataDir()
-  fs.writeFileSync(NEWS_STORE_PATH, JSON.stringify(articles, null, 2))
-}
-
-export function appendArticles(newArticles: NewsArticle[]): { added: number; skipped: number } {
-  const existing = readArticles()
-  const existingUrls = new Set(existing.map((a) => a.url))
-
-  let added = 0
-  let skipped = 0
-
-  for (const article of newArticles) {
-    if (existingUrls.has(article.url)) {
-      skipped++
-    } else {
-      existing.push(article)
-      existingUrls.add(article.url)
-      added++
-    }
-  }
-
-  // Keep latest 1000 articles max, sorted newest first
-  existing.sort((a, b) => new Date(b.scrapedAt).getTime() - new Date(a.scrapedAt).getTime())
-  const trimmed = existing.slice(0, 1000)
-
-  writeArticles(trimmed)
-  return { added, skipped }
-}
-
-export function getTodaysArticles(): NewsArticle[] {
-  const all = readArticles()
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return all.filter((a) => new Date(a.scrapedAt) >= today)
-}
-
-export function getWeeklyArticles(): NewsArticle[] {
-  const all = readArticles()
-  const weekAgo = new Date()
-  weekAgo.setDate(weekAgo.getDate() - 7)
-  return all.filter((a) => new Date(a.scrapedAt) >= weekAgo)
-}
-
-// ── Config Store ─────────────────────────────────────────────────────────────
-
-const DEFAULT_CONFIG: AppConfig = {
+export const DEFAULT_CONFIG: AppConfig = {
   smtpHost: process.env.SMTP_HOST || 'smtp.gmail.com',
   smtpPort: Number(process.env.SMTP_PORT) || 587,
   smtpUser: process.env.SMTP_USER || '',
@@ -82,21 +14,86 @@ const DEFAULT_CONFIG: AppConfig = {
   defaultLanguage: 'en',
 }
 
-export function readConfig(): AppConfig {
-  ensureDataDir()
-  if (!fs.existsSync(CONFIG_PATH)) return DEFAULT_CONFIG
-  try {
-    const raw = fs.readFileSync(CONFIG_PATH, 'utf-8')
-    return { ...DEFAULT_CONFIG, ...JSON.parse(raw) }
-  } catch {
-    return DEFAULT_CONFIG
+async function supabase(path: string, options?: RequestInit) {
+  return fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
+    ...options,
+    headers: {
+      'apikey': SUPABASE_KEY,
+      'Authorization': `Bearer ${SUPABASE_KEY`,
+      'Content-Type': 'application/json',
+      'Prefer': 'return=representation',
+      ...options?.headers,
+    },
+  })
+}
+
+function mapRow(r: any): NewsArticle {
+  return {
+    id: r.id,
+    universityName: r.university_name,
+    universityShortName: r.university_short_name,
+    title: r.title,
+    url: r.url,
+    source: r.source,
+    publishedAt: r.published_at,
+    scrapedAt: r.scraped_at,
+    summaryEn: r.summary_en,
+    summaryCn: r.summary_cn,
+    category: r.category,
+    urgency: r.urgency,
+    urgencyReason: r.urgency_reason,
   }
 }
 
-export function writeConfig(config: Partial<AppConfig>): AppConfig {
-  ensureDataDir()
-  const current = readConfig()
-  const updated = { ...current, ...config }
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(updated, null, 2))
-  return updated
+export async function readArticles(): Promise<NewsArticle[]> {
+  try {
+    const res = await supabase('articles?select=*&order=scraped_at.desc&limit=1000')
+    if (!res.ok) return []
+    const rows = await res.json()
+    return rows.map(mapRow)
+  } catch { return [] }
+}
+
+export async function getTodaysArticles(): Promise<NewsArticle[]> {
+  try {
+    // Start of today in UTC (midnight)
+    const startOfDay = new Date()
+    startOfDay.setUTCHours(0, 0, 0, 0)
+    const iso = startOfDay.toISOString()
+
+    const res = await supabase(
+      `articles?select=*&scraped_at=gte.${iso}&order=scraped_at.desc&limit=500`
+    )
+    if (!res.ok) {
+      console.error('getTodaysArticles error:', await res.text())
+      return []
+    }
+    const rows = await res.json()
+    return rows.map(mapRow)
+  } catch (e) {
+    console.error('getTodaysArticles exception:', e)
+    return []
+  }
+}
+
+export async function getWeeklyArticles(): Promise<NewsArticle[]> {
+  try {
+    // 7 days ago from now in UTC
+    const sevenDaysAgo = new Date()
+    sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 7)
+    const iso = sevenDaysAgo.toISOString()
+
+    const res = await supabase(
+      `articles?select=*&scraped_at=gte.${iso}&order=scraped_at.desc&limit=1000`
+    )
+    if (!res.ok) {
+      console.error('getWeeklyArticles error:', await res.text())
+      return []
+    }
+    const rows = await res.json()
+    return rows.map(mapRow)
+  } catch (e) {
+    console.error('getWeeklyArticles exception:', e)
+    return []
+  }
 }

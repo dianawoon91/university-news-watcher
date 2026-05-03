@@ -45,6 +45,14 @@ function mapRow(r: any): NewsArticle {
   }
 }
 
+export async function readConfig(): Promise<AppConfig> {
+  return DEFAULT_CONFIG
+}
+
+export async function writeConfig(config: Partial<AppConfig>): Promise<void> {
+  Object.assign(DEFAULT_CONFIG, config)
+}
+
 export async function readArticles(): Promise<NewsArticle[]> {
   try {
     const res = await supabase('articles?select=*&order=scraped_at.desc&limit=1000')

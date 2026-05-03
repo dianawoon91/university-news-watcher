@@ -54,6 +54,41 @@ export async function readArticles(): Promise<NewsArticle[]> {
   } catch { return [] }
 }
 
+export async function appendArticles(articles: NewsArticle[]): Promise<number> {
+  try {
+    if (articles.length === 0) return 0
+    const rows = articles.map(a => ({
+      id: a.id,
+      university_name: a.universityName,
+      university_short_name: a.universityShortName,
+      title: a.title,
+      url: a.url,
+      source: a.source,
+      published_at: a.publishedAt,
+      scraped_at: a.scrapedAt,
+      summary_en: a.summaryEn,
+      summary_cn: a.summaryCn,
+      category: a.category,
+      urgency: a.urgency,
+      urgency_reason: a.urgencyReason,
+    }))
+    const res = await supabase('articles?on_conflict=url', {
+      method: 'POST',
+      headers: { 'Prefer': 'resolution=ignore-duplicates,return=representation' },
+      body: JSON.stringify(rows),
+    })
+    if (!res.ok) {
+      console.error('appendArticles error:', await res.text())
+      return 0
+    }
+    const inserted = await res.json()
+    return Array.isArray(inserted) ? inserted.length : 0
+  } catch (e) {
+    console.error('appendArticles exception:', e)
+    return 0
+  }
+}
+
 export async function getTodaysArticles(): Promise<NewsArticle[]> {
   try {
     const startOfDay = new Date()

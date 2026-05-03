@@ -1,46 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { scrapeAllSources } from '@/lib/scraper'
-import { appendArticles } from '@/lib/store'
+import { appendArticles, deleteOldArticles } from '@/lib/store'
 import { NewsArticle } from '@/lib/types'
 
 export const maxDuration = 300
 
 export async function POST(req: NextRequest) {
-  try {
-    const { articles: rawArticles, errors, sourcesChecked } = await scrapeAllSources()
+    try {
+          // Delete articles older than 7 days first
+      await deleteOldArticles(7)
 
-    if (rawArticles.length === 0) {
-      return NextResponse.json({ success: true, message: 'No articles found', stats: { articlesFound: 0, articlesAdded: 0, articlesSkipped: 0, urgentCount: 0, sourcesChecked, errors } })
+      const { articles: rawArticles, errors, sourcesChecked } = await scrapeAllSources()
+
+      if (rawArticles.length === 0) {
+              return NextResponse.json({ success: true, message: 'No articles found', stats: { articlesFound: 0, articlesAdded: 0, articlesSkipped: 0, urgentCount: 0, sourcesChecked, errors } })
+      }
+
+      const now = new Date()
+          const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+
+      // Only keep articles published within the last 7 days
+      const recentRaw = rawArticles.filter(raw => {
+              if (!raw.publishedAt) return false
+              const pub = new Date(raw.publishedAt)
+              return pub >= sevenDaysAgo && pub <= now
+      })
+
+      if (recentRaw.length === 0) {
+              return NextResponse.json({ success: true, message: 'No recent articles found (all older than 7 days)', stats: { articlesFound: rawArticles.length, articlesAdded: 0, articlesSkipped: rawArticles.length, urgentCount: 0, sourcesChecked, errors } })
+      }
+
+      const articles: NewsArticle[] = recentRaw.slice(0, 50).map((raw) => ({
+              id: Buffer.from(raw.url).toString('base64').slice(0, 16),
+              universityName: raw.universityName,
+              universityShortName: raw.universityShortName,
+              title: raw.title,
+              url: raw.url,
+              source: raw.source,
+              publishedAt: raw.publishedAt || new Date().toISOString(),
+              scrapedAt: new Date().toISOString(),
+              summaryEn: raw.title,
+              summaryCn: '',
+              category: 'General News',
+              urgency: 'normal' as const,
+              urgencyReason: '',
+      }))
+
+      const { added, skipped } = await appendArticles(articles)
+
+      return NextResponse.json({
+              success: true,
+              message: `Scrape complete! +${added} new articles`,
+              stats: { articlesFound: rawArticles.length, articlesAdded: added, articlesSkipped: skipped, urgentCount: 0, sourcesChecked, errors }
+      })
+    } catch (error) {
+          console.error('Scrape error:', error)
+          return NextResponse.json({ success: false, error: String(error) }, { status: 500 })
     }
-
-    const articles: NewsArticle[] = rawArticles.slice(0, 20).map((raw) => ({
-      id: Buffer.from(raw.url).toString('base64').slice(0, 16),
-      universityName: raw.universityName,
-      universityShortName: raw.universityShortName,
-      title: raw.title,
-      url: raw.url,
-      source: raw.source,
-      publishedAt: new Date().toISOString(),
-      scrapedAt: new Date().toISOString(),
-      summaryEn: raw.content || 'Click the title to read the full article.',
-      summaryCn: '点击标题阅读全文。',
-      category: 'GENERAL' as const,
-      urgency: 'NORMAL' as const,
-    }))
-
-    const { added, skipped } = await appendArticles(articles)
-
-    return NextResponse.json({
-      success: true,
-      message: `Scrape complete`,
-      stats: { articlesFound: rawArticles.length, articlesAdded: added, articlesSkipped: skipped, urgentCount: 0, sourcesChecked, errors },
-    })
-  } catch (err) {
-    console.error('Scrape error:', err)
-    return NextResponse.json({ success: false, error: err instanceof Error ? err.message : 'Unknown error' }, { status: 500 })
-  }
-}
-
-export async function GET() {
-  return NextResponse.json({ message: 'POST to /api/scrape to trigger a scrape' })
 }

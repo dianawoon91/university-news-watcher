@@ -54,9 +54,9 @@ export async function readArticles(): Promise<NewsArticle[]> {
   } catch { return [] }
 }
 
-export async function appendArticles(articles: NewsArticle[]): Promise<number> {
+export async function appendArticles(articles: NewsArticle[]): Promise<{ added: number; skipped: number }> {
   try {
-    if (articles.length === 0) return 0
+    if (articles.length === 0) return { added: 0, skipped: 0 }
     const rows = articles.map(a => ({
       id: a.id,
       university_name: a.universityName,
@@ -79,13 +79,14 @@ export async function appendArticles(articles: NewsArticle[]): Promise<number> {
     })
     if (!res.ok) {
       console.error('appendArticles error:', await res.text())
-      return 0
+      return { added: 0, skipped: articles.length }
     }
     const inserted = await res.json()
-    return Array.isArray(inserted) ? inserted.length : 0
+    const added = Array.isArray(inserted) ? inserted.length : 0
+    return { added, skipped: articles.length - added }
   } catch (e) {
     console.error('appendArticles exception:', e)
-    return 0
+    return { added: 0, skipped: articles.length }
   }
 }
 
